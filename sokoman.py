@@ -19,15 +19,19 @@ while True:
     if (man_pos == block_pos) or (block_pos == target_pos) or (target_pos == man_pos): pass
     else: break
 
+def print_board():
+    for pos in array:
+        x = str(pos).replace(str(man_pos), '^ ').replace(str(target_pos), '* ').replace(str(block_pos), '# ').replace('[', '_').replace(']', '').replace(',', '')
+        x = x.replace('6', '').replace('5', '').replace('4', '').replace('3', '').replace('2', '').replace('1', '').replace('0', '')
+        print(x)
 
-for pos in array:
-    x = str(pos).replace(str(man_pos), '^ ').replace(str(target_pos), '* ').replace(str(block_pos), '# ').replace('[', '_').replace(']', '').replace(',', '')
-    x = x.replace('6', '').replace('5', '').replace('4', '').replace('3', '').replace('2', '').replace('1', '').replace('0', '')
-    print(x)
+def get_coordinates():
+    print man_pos
+    print block_pos
+    print target_pos 
 
-print man_pos
-print block_pos
-print target_pos 
+print_board()
+get_coordinates()
 
 while True:
     cmd = raw_input("Enter the command (w, a, s, d):\n")
@@ -44,14 +48,9 @@ while True:
                 else:
                     man_pos = [man_pos[0] - 1, man_pos[1]]
             s('cls')
-            for pos in array:
-                x = str(pos).replace(str(man_pos), '^ ').replace(str(target_pos), '* ').replace(str(block_pos), '# ').replace('[', '_').replace(']', '').replace(',', '')
-                x = x.replace('6', '').replace('5', '').replace('4', '').replace('3', '').replace('2', '').replace('1', '').replace('0', '')
-                print(x)
-            print man_pos
-            print block_pos
-            print target_pos 
-
+            print_board()
+            get_coordinates()
+            
         elif cmd.lower() == 's':
             if man_pos[0] == 6: pass
             else: 
@@ -64,13 +63,8 @@ while True:
                     man_pos = [man_pos[0] + 1, man_pos[1]]
         
             s('cls')
-            for pos in array:
-                x = str(pos).replace(str(man_pos), '^ ').replace(str(target_pos), '* ').replace(str(block_pos), '# ').replace('[', '_').replace(']', '').replace(',', '')
-                x = x.replace('6', '').replace('5', '').replace('4', '').replace('3', '').replace('2', '').replace('1', '').replace('0', '')
-                print(x)
-            print man_pos
-            print block_pos
-            print target_pos 
+            print_board()
+            get_coordinates()
 
         elif cmd.lower() == 'a':
             if man_pos[1] == 0: pass
@@ -86,13 +80,8 @@ while True:
                     man_pos = [man_pos[0], man_pos[1] - 1]
         
             s('cls')
-            for pos in array:
-                x = str(pos).replace(str(man_pos), '^ ').replace(str(target_pos), '* ').replace(str(block_pos), '# ').replace('[', '_').replace(']', '').replace(',', '')
-                x = x.replace('6', '').replace('5', '').replace('4', '').replace('3', '').replace('2', '').replace('1', '').replace('0', '')
-                print(x)
-            print man_pos
-            print block_pos
-            print target_pos 
+            print_board()
+            get_coordinates()
 
         elif cmd.lower() == 'd':
             if man_pos[1] == 6: pass
@@ -106,13 +95,9 @@ while True:
                     man_pos = [man_pos[0], man_pos[1] + 1]
         
             s('cls')
-            for pos in array:
-                x = str(pos).replace(str(man_pos), '^ ').replace(str(target_pos), '* ').replace(str(block_pos), '# ').replace('[', '_').replace(']', '').replace(',', '')
-                x = x.replace('6', '').replace('5', '').replace('4', '').replace('3', '').replace('2', '').replace('1', '').replace('0', '')
-                print(x)
-            print man_pos
-            print block_pos
-            print target_pos 
+            print_board()
+            get_coordinates()
+            
     if block_pos == target_pos: break
 
 print "YOU WIN"

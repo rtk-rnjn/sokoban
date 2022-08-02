@@ -16,8 +16,12 @@ while True:
     block_pos = [random.randint(1,5), random.randint(1,5)]
     target_pos = [random.randint(0,6), random.randint(0,6)]
 
-    if (man_pos == block_pos) or (block_pos == target_pos) or (target_pos == man_pos): pass
-    else: break
+    if (
+        man_pos != block_pos
+        and block_pos != target_pos
+        and target_pos != man_pos
+    ):
+        break
 
 def print_board():
     for pos in array:

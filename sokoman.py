@@ -1,15 +1,15 @@
 from __future__ import annotations
 
 import os
-import random
+import pathlib
 import sys
 import time
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from enum import StrEnum
 
-BOARD_SIZE = 9
 FPS = 30
+LEVELS_DIR = pathlib.Path("levels")
 
 
 class Direction(StrEnum):
@@ -20,12 +20,17 @@ class Direction(StrEnum):
 
 
 PLAYER_SYMBOLS = {
-    Direction.UP: "^",
-    Direction.DOWN: "v",
-    Direction.LEFT: "<",
-    Direction.RIGHT: ">",
+    Direction.UP: "\N{BLACK UP-POINTING TRIANGLE}",
+    Direction.DOWN: "\N{BLACK DOWN-POINTING TRIANGLE}",
+    Direction.LEFT: "\N{BLACK LEFT-POINTING TRIANGLE}",
+    Direction.RIGHT: "\N{BLACK RIGHT-POINTING TRIANGLE}",
 }
 
+WALL_SYMBOL = "\N{FULL BLOCK}"
+FLOOR_SYMBOL = "\N{MIDDLE DOT}"
+TARGET_SYMBOL = "\N{BULLSEYE}"
+BLOCK_SYMBOL = "\N{WHITE SQUARE CONTAINING BLACK SMALL SQUARE}"
+BLOCK_ON_TARGET_SYMBOL = "\N{FISHEYE}"
 
 if os.name == "nt":
     import msvcrt
@@ -81,74 +86,98 @@ class Position:
                 return Position(self.row, self.col + 1)
 
 
+@dataclass(frozen=True)
+class GameState:
+    player: Position
+    blocks: frozenset[Position]
+    moves: int
+    last_direction: Direction
+
+
 @dataclass
 class Game:
+    rows: int
+    cols: int
     player: Position
-    block: Position
-    target: Position
-    walls: set[Position] = field(default_factory=set)
+    blocks: set[Position]
+    targets: set[Position]
+    walls: set[Position]
 
     moves: int = 0
     running: bool = True
     won: bool = False
-
     last_direction: Direction = Direction.DOWN
 
-    history: list[tuple[Position, Position, int, Direction]] = field(
-        default_factory=list
-    )
+    history: list[GameState] = field(default_factory=list)
 
     starting_player: Position | None = None
-    starting_block: Position | None = None
+    starting_blocks: frozenset[Position] | None = None
 
     def __post_init__(self) -> None:
         self.starting_player = self.player
-        self.starting_block = self.block
+        self.starting_blocks = frozenset(self.blocks)
+        self.won = self.is_won()
 
     def is_inside(self, position: Position) -> bool:
-        return 0 <= position.row < BOARD_SIZE and 0 <= position.col < BOARD_SIZE
+        return 0 <= position.row < self.rows and 0 <= position.col < self.cols
 
     def is_wall(self, position: Position) -> bool:
         return position in self.walls
 
+    def is_block(self, position: Position) -> bool:
+        return position in self.blocks
+
+    def is_won(self) -> bool:
+        return self.blocks == self.targets
+
     def move(self, direction: Direction) -> None:
         new_player = self.player.moved(direction)
 
+        # Can't walk outside the level or through a wall.
         if not self.is_inside(new_player) or self.is_wall(new_player):
             return
 
-        # Player is moving into an empty cell.
-        if new_player != self.block:
+        # Player walks into an empty cell.
+        if new_player not in self.blocks:
             self.save_state()
 
             self.player = new_player
             self.last_direction = direction
             self.moves += 1
+            self.won = self.is_won()
 
             return
 
-        new_block = self.block.moved(direction)
+        # Player is trying to push a block.
+        new_block = new_player.moved(direction)
 
-        if not self.is_inside(new_block) or self.is_wall(new_block):
+        if not self.is_inside(new_block):
+            return
+
+        if self.is_wall(new_block):
+            return
+
+        if new_block in self.blocks:
             return
 
         self.save_state()
 
+        self.blocks.remove(new_player)
+        self.blocks.add(new_block)
+
         self.player = new_player
-        self.block = new_block
         self.last_direction = direction
         self.moves += 1
 
-        if self.block == self.target:
-            self.won = True
+        self.won = self.is_won()
 
     def save_state(self) -> None:
         self.history.append(
-            (
-                self.player,
-                self.block,
-                self.moves,
-                self.last_direction,
+            GameState(
+                player=self.player,
+                blocks=frozenset(self.blocks),
+                moves=self.moves,
+                last_direction=self.last_direction,
             )
         )
 
@@ -156,24 +185,24 @@ class Game:
         if not self.history:
             return
 
-        (
-            self.player,
-            self.block,
-            self.moves,
-            self.last_direction,
-        ) = self.history.pop()
+        state = self.history.pop()
 
-        self.won = self.block == self.target
+        self.player = state.player
+        self.blocks = set(state.blocks)
+        self.moves = state.moves
+        self.last_direction = state.last_direction
+        self.won = self.is_won()
 
     def restart(self) -> None:
-        if self.starting_player is None or self.starting_block is None:
+        if self.starting_player is None or self.starting_blocks is None:
             return
 
         self.player = self.starting_player
-        self.block = self.starting_block
+        self.blocks = set(self.starting_blocks)
         self.moves = 0
         self.history.clear()
-        self.won = False
+        self.last_direction = Direction.DOWN
+        self.won = self.is_won()
 
     def handle_key(self, key: str) -> None:
         key = key.lower()
@@ -192,102 +221,199 @@ class Game:
 
         if key == "r":
             self.restart()
-            return
 
     def render(self) -> None:
         print("\033[2J\033[H", end="")
 
-        print("=" * (BOARD_SIZE * 2 - 1))
+        title_width = max(self.cols, 20)
+
+        print("=" * title_width)
         print("SOKOBAN")
-        print("=" * (BOARD_SIZE * 2 - 1))
+        print("=" * title_width)
         print()
 
-        for row in range(BOARD_SIZE):
+        for row in range(self.rows):
             cells = []
 
-            for col in range(BOARD_SIZE):
+            for col in range(self.cols):
                 position = Position(row, col)
 
-                if position == self.player:
-                    cells.append(PLAYER_SYMBOLS[self.last_direction])
+                if position in self.walls:
+                    cell = WALL_SYMBOL
 
-                elif position == self.block:
-                    if position == self.target:
-                        cells.append("@")
+                elif position == self.player:
+                    cell = PLAYER_SYMBOLS[self.last_direction]
+
+                elif position in self.blocks:
+                    if position in self.targets:
+                        cell = BLOCK_ON_TARGET_SYMBOL
                     else:
-                        cells.append("#")
+                        cell = BLOCK_SYMBOL
 
-                elif position == self.target:
-                    cells.append("*")
-
-                elif position in self.walls:
-                    cells.append("\N{FULL BLOCK}")
+                elif position in self.targets:
+                    cell = TARGET_SYMBOL
 
                 else:
-                    cells.append(".")
+                    cell = FLOOR_SYMBOL
+
+                cells.append(cell)
 
             print(" ".join(cells))
 
         print()
         print(f"Moves: {self.moves}")
         print()
-        print("WASD  Move    U  Undo    R  Restart    Q  Quit")
+        print("+--------------+------------+---------------+-----------+")
+        print("| WASD - Move  |  U - Undo  |  R - Restart  |  Q - Quit |")
+        print("+--------------+------------+---------------+-----------+")
 
         if self.won:
             print()
             print("YOU WIN!")
 
 
-def create_game(level: int = 1) -> Game:
-    max_walls = (BOARD_SIZE * BOARD_SIZE) // 3
-    wall_count = min(4 + level * 2, max_walls)
+def load_levels() -> dict[int, str]:
+    levels: dict[int, str] = {}
 
-    positions = [
-        Position(row, col) for row in range(BOARD_SIZE) for col in range(BOARD_SIZE)
-    ]
+    if not LEVELS_DIR.exists():
+        raise FileNotFoundError(f"Levels directory not found: {LEVELS_DIR}")
 
-    while True:
-        player, block, target = random.sample(positions, 3)
-
-        # Give the block some room around it.
-        if block.row in {0, BOARD_SIZE - 1} or block.col in {0, BOARD_SIZE - 1}:
+    for file in LEVELS_DIR.glob("level*.txt"):
+        if not file.is_file():
             continue
 
-        available = [
-            position
-            for position in positions
-            if position not in {player, block, target}
-        ]
-
-        walls = set(random.sample(available, wall_count))
-
-        # Don't completely surround the player.
-        neighbours = [player.moved(direction) for direction in Direction]
-
-        free_neighbours = [
-            position
-            for position in neighbours
-            if (
-                0 <= position.row < BOARD_SIZE
-                and 0 <= position.col < BOARD_SIZE
-                and position not in walls
-            )
-        ]
-
-        if not free_neighbours:
+        try:
+            level_number = int(file.stem[5:])
+        except ValueError:
             continue
 
-        return Game(
-            player=player,
-            block=block,
-            target=target,
-            walls=walls,
+        levels[level_number] = file.read_text(encoding="utf-8").rstrip("\n")
+
+    if not levels:
+        raise RuntimeError(f"No level files found in {LEVELS_DIR}")
+
+    return levels
+
+
+LEVELS = load_levels()
+
+
+def create_game(level: int) -> Game:
+    try:
+        level_data = LEVELS[level]
+    except KeyError:
+        raise ValueError(f"Level {level} does not exist")
+
+    return parse_level(level_data)
+
+
+def parse_level(level_data: str) -> Game:
+    """
+    Parse a Sokoban level.
+
+    Supported characters:
+
+        #  wall
+        .  target
+        $  block
+        @  player
+        x  block on target
+        space  empty floor
+
+    Leading/trailing spaces are preserved because they define the shape
+    of irregular Sokoban levels.
+    """
+
+    # Remove only newline characters. Do not strip spaces.
+    lines = level_data.splitlines()
+
+    if not lines:
+        raise ValueError("Level is empty")
+
+    rows = len(lines)
+    cols = max(len(line) for line in lines)
+
+    player: Position | None = None
+    blocks: set[Position] = set()
+    targets: set[Position] = set()
+    walls: set[Position] = set()
+
+    valid_characters = {"#", ".", "$", "@", "x", " "}
+
+    for row, line in enumerate(lines):
+        for col in range(cols):
+            # Shorter lines are padded with floor.
+            char = line[col] if col < len(line) else " "
+
+            if char not in valid_characters:
+                raise ValueError(
+                    f"Invalid character {char!r} at row {row + 1}, column {col + 1}"
+                )
+
+            position = Position(row, col)
+
+            match char:
+                case "#":
+                    walls.add(position)
+
+                case ".":
+                    targets.add(position)
+
+                case "$":
+                    blocks.add(position)
+
+                case "@":
+                    if player is not None:
+                        raise ValueError("Level contains multiple players")
+
+                    player = position
+
+                case "x":
+                    blocks.add(position)
+                    targets.add(position)
+
+                case " ":
+                    pass
+
+    if player is None:
+        raise ValueError("Level does not contain a player (@)")
+
+    if not blocks:
+        raise ValueError("Level does not contain any blocks ($ or x)")
+
+    if len(blocks) != len(targets):
+        raise ValueError(
+            f"Number of blocks ({len(blocks)}) does not match "
+            f"number of targets ({len(targets)})"
         )
+
+    if player in walls:
+        raise ValueError("Player cannot be inside a wall")
+
+    if blocks & walls:
+        raise ValueError("A block cannot be inside a wall")
+
+    if targets & walls:
+        raise ValueError("A target cannot be inside a wall")
+
+    return Game(
+        rows=rows,
+        cols=cols,
+        player=player,
+        blocks=blocks,
+        targets=targets,
+        walls=walls,
+    )
 
 
 def main() -> None:
-    level = 1
-    game = create_game(level)
+    level_numbers = sorted(LEVELS)
+
+    if not level_numbers:
+        raise RuntimeError("No levels available")
+
+    level_index = 0
+    game = create_game(level_numbers[level_index])
 
     try:
         with raw_terminal():
@@ -301,8 +427,15 @@ def main() -> None:
                 if game.won:
                     time.sleep(1.0)
 
-                    level += 1
-                    game = create_game(level)
+                    level_index += 1
+
+                    # All levels completed.
+                    if level_index >= len(level_numbers):
+                        print()
+                        print("ALL LEVELS COMPLETED!")
+                        break
+
+                    game = create_game(level_numbers[level_index])
 
                 time.sleep(1 / FPS)
 
@@ -310,8 +443,6 @@ def main() -> None:
         pass
 
     finally:
-        # Ensure the terminal doesn't remain in an unusual state.
-        # I chatGPT. lol
         print("\033[0m\033[?25h", end="")
         print("\nGame ended.")
 

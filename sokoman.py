@@ -8,7 +8,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field
 from enum import StrEnum
 
-FPS = 30
+FPS = 20
 LEVELS_DIR = pathlib.Path("levels")
 
 
